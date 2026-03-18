@@ -1,0 +1,207 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String
+  password  String
+  resetToken        String?   @unique
+  resetTokenExpires DateTime?
+  role      Role       @default(STUDENT)
+  status    Status     @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  otps                OTP[]
+  chatHistories       ChatHistory[]
+  practiceQuestions   PracticeQuestion[]
+  createdQuizzes      Quiz[]              @relation("QuizCreator")
+  createdNotes        StudentNote[]       @relation("NoteCreator")
+  receivedNotes       StudentNote[]       @relation("NoteStudent")
+  studentPerformances StudentPerformance[] @relation("StudentPerformance")
+  teacherPerformances StudentPerformance[] @relation("TeacherPerformance")
+  quizAttempts        QuizAttempt[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  verified  Boolean  @default(false)
+
+  @@index([userId])
+  @@index([code])
+}
+
+model ChatHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String
+  mode      ExplanationMode
+  answer    String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model PracticeQuestion {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String
+  options   String[] // JSON array stored as string
+  correctAnswer String
+  explanation String
+  topic     String
+  difficulty String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([topic])
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  teacherId   String
+  teacher     User     @relation("QuizCreator", fields: [teacherId], references: [id], onDelete: Cascade)
+  topic       String
+  difficulty  String
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+
+  @@index([teacherId])
+  @@index([topic])
+  @@index([isPublished])
+}
+
+model QuizQuestion {
+  id            String   @id @default(cuid())
+  quizId        String
+  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  question      String
+  options       String[]
+  correctAnswer String
+  explanation   String
+  points        Int      @default(1)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  quizId    String
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  score     Int
+  totalScore Int
+  answers   Json     // Store student answers as JSON
+ createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt // Add @default(now()) temporarily
+  completedAt DateTime @default(now())
+
+  @@index([quizId])
+  @@index([studentId])
+  @@index([completedAt])
+}
+
+model StudentNote {
+  id            String   @id @default(cuid())
+  studentId     String
+  student       User     @relation("NoteStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId     String
+  teacher       User     @relation("NoteCreator", fields: [teacherId], references: [id], onDelete: Cascade)
+  title         String
+  content       String?
+  extractedText String?  @db.Text // Full extracted text from PDF/files - used for embeddings
+  fileUrl       String?  // URL to uploaded PDF/file
+  fileName      String?
+  fileType      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  embeddings NoteEmbedding[]
+
+  @@index([studentId])
+  @@index([teacherId])
+  @@index([createdAt])
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+model NoteEmbedding {
+  id         String   @id @default(cuid())
+  noteId     String
+  note       StudentNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  content    String
+  embedding  Json // Store as JSON array for local embeddings (384 dimensions from all-MiniLM-L6-v2)
+  chunkIndex Int
+  createdAt  DateTime @default(now())
+
+  @@index([noteId])
+}
+
+model StudentPerformance {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation("StudentPerformance", fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId String
+  teacher   User     @relation("TeacherPerformance", fields: [teacherId], references: [id], onDelete: Cascade)
+  subject   String
+  score     Float
+  maxScore  Float
+  grade     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([teacherId])
+  @@index([subject])
+  @@index([createdAt])
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ExplanationMode {
+  SHORT
+  DETAILED
+  HINT_ONLY
+}
